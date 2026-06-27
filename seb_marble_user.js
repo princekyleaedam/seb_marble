@@ -1,13 +1,14 @@
 // ==UserScript==
-// @name         Seb Marble
+// @name         Sebplace Dark Mode
 // @namespace    http://tampermonkey.net/
-// @version      0.1
-// @description  Adds dark mode toggle with canvas background control (for now)
-// @author       princekyleaedam
+// @version      0.1.1
+// @description  Adds dark mode toggle and canvas stats to sidebar
+// @author       Seb
 // @match        https://themilliondollardrawing.com/*
 // @grant        GM_addStyle
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @grant        GM_xmlhttpRequest
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -19,195 +20,208 @@
     // ============================================
     const STORAGE_KEY = 'sebplace_dark_mode';
     const DEFAULT_ENABLED = false;
+    const TOTAL_PIXELS = 1000000;
+    const API_URL = 'https://api.themilliondollardrawing.com/ticker';
+    const UPDATE_INTERVAL = 60000; // 1 minute
 
     // ============================================
     // STATE MANAGEMENT
     // ============================================
     let isDarkMode = GM_getValue(STORAGE_KEY, DEFAULT_ENABLED);
-    let isExpanded = false; // Start collapsed
     let canvasPatched = false;
     let observer = null;
     let originalFillRect = null;
     let canvasCtx = null;
+    let aboutPopupOpen = false;
+    let pixelCount = 0;
+    let updateTimer = null;
 
     // ============================================
     // CSS STYLES
     // ============================================
     GM_addStyle(`
-        /* Widget Container - Collapsed by default */
-        #sebplace-darkmode-widget {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 99999;
-            font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            user-select: none;
-        }
-
-        /* Moon Icon Button (always visible) */
-        #sebplace-toggle-btn {
-            width: 46px;
-            height: 46px;
-            border-radius: 50%;
-            background: rgba(30, 30, 35, 0.92);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            color: #ffffff;
-            font-size: 22px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-            transition: all 0.3s ease;
-            padding: 0;
-            line-height: 1;
-            position: relative;
-        }
-
-        #sebplace-toggle-btn:hover {
-            transform: scale(1.08);
-            background: rgba(40, 40, 48, 0.95);
-            border-color: rgba(255, 255, 255, 0.2);
-            box-shadow: 0 6px 30px rgba(0, 0, 0, 0.5);
-        }
-
-        #sebplace-toggle-btn:active {
-            transform: scale(0.92);
-        }
-
-        /* Active state indicator dot */
-        #sebplace-toggle-btn .active-dot {
-            position: absolute;
-            bottom: 4px;
-            right: 4px;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            border: 2px solid rgba(30, 30, 35, 0.92);
+        /* Canvas Stats Section */
+        .sebplace-stats-section {
+            padding: 12px 16px 10px 16px;
+            border-bottom: 1px solid rgba(225, 225, 229, 0.15);
             transition: all 0.3s ease;
         }
 
-        #sebplace-toggle-btn .active-dot.on {
-            background: #34C759;
-            box-shadow: 0 0 12px rgba(52, 199, 89, 0.5);
-        }
-
-        #sebplace-toggle-btn .active-dot.off {
-            background: #666;
-        }
-
-        /* Expanded Widget Panel */
-        #sebplace-darkmode-panel {
-            position: absolute;
-            top: calc(100% + 12px);
-            right: 0;
-            background: rgba(30, 30, 35, 0.95);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            border-radius: 16px;
-            padding: 16px 20px 18px 20px;
-            min-width: 220px;
-            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
-            transform-origin: top right;
-            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-            pointer-events: none;
-            opacity: 0;
-            transform: scale(0.92) translateY(-8px);
-        }
-
-        #sebplace-darkmode-panel.expanded {
-            pointer-events: auto;
-            opacity: 1;
-            transform: scale(1) translateY(0);
-        }
-
-        #sebplace-darkmode-panel .widget-title {
-            color: #ffffff;
-            font-size: 13px;
-            font-weight: 600;
-            letter-spacing: 0.02em;
-            margin-bottom: 12px;
+        .sebplace-stats-section .stats-label {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            color: rgba(0, 0, 0, 0.6);
+            margin-bottom: 4px;
         }
 
-        #sebplace-darkmode-panel .widget-title .icon {
-            font-size: 16px;
+        body.sebplace-dark-mode .sebplace-stats-section .stats-label {
+            color: rgba(255, 255, 255, 0.6);
         }
 
-        #sebplace-darkmode-panel .widget-title .badge {
-            background: rgba(0, 122, 255, 0.25);
-            color: #4da6ff;
-            font-size: 8px;
-            font-weight: 700;
-            padding: 2px 8px;
-            border-radius: 10px;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
+        .sebplace-stats-section .stats-label .icon {
+            font-size: 14px;
         }
 
-        #sebplace-darkmode-panel .toggle-row {
+        .sebplace-stats-section .stats-numbers {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 6px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            font-size: 13px;
+            font-weight: 600;
+            color: rgba(0, 0, 0, 0.85);
+            margin-bottom: 6px;
         }
 
-        #sebplace-darkmode-panel .toggle-row:last-child {
-            border-bottom: none;
+        body.sebplace-dark-mode .sebplace-stats-section .stats-numbers {
+            color: rgba(255, 255, 255, 0.85);
         }
 
-        #sebplace-darkmode-panel .toggle-label {
-            color: rgba(255, 255, 255, 0.75);
-            font-size: 12px;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            gap: 8px;
+        .sebplace-stats-section .stats-numbers .claimed {
+            color: #007AFF;
         }
 
-        #sebplace-darkmode-panel .toggle-label .sub {
+        .sebplace-stats-section .stats-numbers .total {
+            color: rgba(0, 0, 0, 0.35);
+        }
+
+        body.sebplace-dark-mode .sebplace-stats-section .stats-numbers .total {
             color: rgba(255, 255, 255, 0.35);
-            font-size: 10px;
-            font-weight: 400;
         }
 
-        /* Toggle Switch */
-        .seb-toggle {
+        .sebplace-stats-section .progress-bar-track {
+            width: 100%;
+            height: 4px;
+            background: rgba(0, 0, 0, 0.08);
+            border-radius: 4px;
+            overflow: hidden;
             position: relative;
-            width: 40px;
-            height: 22px;
-            flex-shrink: 0;
-            cursor: pointer;
         }
 
-        .seb-toggle input {
-            opacity: 0;
-            width: 0;
-            height: 0;
+        body.sebplace-dark-mode .sebplace-stats-section .progress-bar-track {
+            background: rgba(255, 255, 255, 0.08);
         }
 
-        .seb-toggle .slider {
+        .sebplace-stats-section .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #007AFF, #4DA6FF);
+            border-radius: 4px;
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            width: 0%;
+            position: relative;
+        }
+
+        .sebplace-stats-section .progress-bar-fill::after {
+            content: '';
             position: absolute;
             top: 0;
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(255, 255, 255, 0.15);
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            animation: sebShimmer 2s infinite;
+        }
+
+        @keyframes sebShimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .sebplace-stats-section .stats-percentage {
+            font-size: 10px;
+            font-weight: 500;
+            color: rgba(0, 0, 0, 0.35);
+            text-align: right;
+            margin-top: 3px;
+        }
+
+        body.sebplace-dark-mode .sebplace-stats-section .stats-percentage {
+            color: rgba(255, 255, 255, 0.35);
+        }
+
+        /* Sidebar Dark Mode Row */
+        .sebplace-darkmode-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px;
+            border-bottom: 1px solid rgba(225, 225, 229, 0.15);
+            transition: all 0.3s ease;
+        }
+
+        .sebplace-darkmode-row .sebplace-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            color: rgba(0, 0, 0, 0.85);
+        }
+
+        body.sebplace-dark-mode .sebplace-darkmode-row .sebplace-label {
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        .sebplace-darkmode-row .sebplace-label .icon {
+            font-size: 16px;
+        }
+
+        .sebplace-darkmode-row .sebplace-label .status-dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            margin-left: 4px;
+            transition: all 0.3s ease;
+        }
+
+        .sebplace-darkmode-row .sebplace-label .status-dot.on {
+            background: #34C759;
+            box-shadow: 0 0 8px rgba(52, 199, 89, 0.4);
+        }
+
+        .sebplace-darkmode-row .sebplace-label .status-dot.off {
+            background: #666;
+        }
+
+        /* Sidebar Toggle Switch */
+        .sebplace-toggle-switch {
+            position: relative;
+            width: 38px;
+            height: 20px;
+            flex-shrink: 0;
+            cursor: pointer;
+        }
+
+        .sebplace-toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .sebplace-toggle-switch .slider {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.15);
             border-radius: 34px;
             transition: all 0.3s ease;
             cursor: pointer;
         }
 
-        .seb-toggle .slider::before {
+        body.sebplace-dark-mode .sebplace-toggle-switch .slider {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .sebplace-toggle-switch .slider::before {
             content: "";
             position: absolute;
-            height: 16px;
-            width: 16px;
+            height: 14px;
+            width: 14px;
             left: 3px;
             bottom: 3px;
             background: #ffffff;
@@ -216,16 +230,176 @@
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         }
 
-        .seb-toggle input:checked + .slider {
+        .sebplace-toggle-switch input:checked + .slider {
             background: #007AFF;
         }
 
-        .seb-toggle input:checked + .slider::before {
+        .sebplace-toggle-switch input:checked + .slider::before {
             transform: translateX(18px);
         }
 
-        .seb-toggle .slider:hover {
+        .sebplace-toggle-switch .slider:hover {
             opacity: 0.85;
+        }
+
+        /* About Seb Marble Link */
+        .sebplace-about-link {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            color: rgba(0, 0, 0, 0.5);
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border-bottom: 1px solid rgba(225, 225, 229, 0.08);
+        }
+
+        body.sebplace-dark-mode .sebplace-about-link {
+            color: rgba(255, 255, 255, 0.5);
+        }
+
+        .sebplace-about-link:hover {
+            background: rgba(0, 0, 0, 0.04);
+            color: rgba(0, 0, 0, 0.8);
+        }
+
+        body.sebplace-dark-mode .sebplace-about-link:hover {
+            background: rgba(255, 255, 255, 0.04);
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .sebplace-about-link .icon {
+            font-size: 14px;
+        }
+
+        .sebplace-about-link .version-tag {
+            margin-left: auto;
+            font-size: 10px;
+            color: rgba(0, 0, 0, 0.2);
+        }
+
+        body.sebplace-dark-mode .sebplace-about-link .version-tag {
+            color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* ============================================
+           ABOUT POPUP
+           ============================================ */
+        #sebplace-about-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 999999;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            animation: sebFadeIn 0.2s ease;
+        }
+
+        #sebplace-about-overlay.active {
+            display: flex;
+        }
+
+        #sebplace-about-popup {
+            background: rgba(30, 30, 35, 0.96);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 28px 32px 32px 32px;
+            max-width: 420px;
+            width: 90%;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7);
+            animation: sebPopupIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+
+        #sebplace-about-popup .popup-icon {
+            font-size: 36px;
+            text-align: center;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        #sebplace-about-popup .popup-title {
+            color: #ffffff;
+            font-size: 18px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 8px;
+            letter-spacing: -0.01em;
+        }
+
+        #sebplace-about-popup .popup-title .version {
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        #sebplace-about-popup .popup-divider {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.06);
+            margin: 12px 0 14px 0;
+        }
+
+        #sebplace-about-popup .popup-description {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 13px;
+            line-height: 1.6;
+            text-align: center;
+            margin-bottom: 6px;
+        }
+
+        #sebplace-about-popup .popup-author {
+            color: rgba(255, 255, 255, 0.35);
+            font-size: 11px;
+            text-align: center;
+            font-weight: 400;
+            margin-top: 4px;
+        }
+
+        #sebplace-about-popup .popup-author .heart {
+            color: #ff3b30;
+        }
+
+        #sebplace-about-popup .popup-close-btn {
+            position: absolute;
+            top: 12px;
+            right: 16px;
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 20px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            padding: 4px;
+            line-height: 1;
+        }
+
+        #sebplace-about-popup .popup-close-btn:hover {
+            color: rgba(255, 255, 255, 0.7);
+            transform: rotate(90deg);
+        }
+
+        @keyframes sebFadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes sebPopupIn {
+            from {
+                opacity: 0;
+                transform: scale(0.92) translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
         }
 
         /* Dark Mode Page Styles */
@@ -370,7 +544,6 @@
             border-color: #2a2a30 !important;
         }
 
-        /* Input fields in dark mode */
         body.sebplace-dark-mode input,
         body.sebplace-dark-mode textarea,
         body.sebplace-dark-mode select {
@@ -384,7 +557,6 @@
             border-color: #007AFF !important;
         }
 
-        /* Scrollbar */
         body.sebplace-dark-mode ::-webkit-scrollbar {
             width: 8px;
             height: 8px;
@@ -402,30 +574,93 @@
         body.sebplace-dark-mode ::-webkit-scrollbar-thumb:hover {
             background: #3a3a40;
         }
-
-        /* Animation for collapse */
-        @keyframes sebFadeIn {
-            from {
-                opacity: 0;
-                transform: scale(0.92) translateY(-8px);
-            }
-            to {
-                opacity: 1;
-                transform: scale(1) translateY(0);
-            }
-        }
-
-        @keyframes sebFadeOut {
-            from {
-                opacity: 1;
-                transform: scale(1) translateY(0);
-            }
-            to {
-                opacity: 0;
-                transform: scale(0.92) translateY(-8px);
-            }
-        }
     `);
+
+	// ============================================
+	// API FUNCTIONS - UPDATED
+	// ============================================
+	function fetchTickerData() {
+		return new Promise((resolve, reject) => {
+			GM_xmlhttpRequest({
+				method: 'GET',
+				url: API_URL,
+				headers: {
+					'Accept': 'application/json'
+				},
+				onload: function(response) {
+					try {
+						const data = JSON.parse(response.responseText);
+						resolve(data);
+					} catch (e) {
+						reject(e);
+					}
+				},
+				onerror: function(error) {
+					reject(error);
+				}
+			});
+		});
+	}
+
+	async function updatePixelStats() {
+		try {
+			const data = await fetchTickerData();
+
+			// Look for the "PIXELS CLAIMED" item in the items array
+			if (data && data.items && data.items.length > 0) {
+				for (const item of data.items) {
+					// Match patterns like "100,379 PIXELS CLAIMED" or "100,379 PIXELS CLAIMED!"
+					const match = item.match(/([\d,]+)\s*PIXELS\s*CLAIMED/);
+					if (match) {
+						pixelCount = parseInt(match[1].replace(/,/g, ''), 10);
+						console.log('[Sebplace] Found pixel count:', pixelCount);
+						break;
+					}
+				}
+			}
+
+			// If we still don't have a count, try looking for "AVAILABLE" pattern
+			if (pixelCount === 0 && data && data.items) {
+				for (const item of data.items) {
+					// Match patterns like "899,621 PIXELS AVAILABLE"
+					const match = item.match(/([\d,]+)\s*PIXELS\s*AVAILABLE/);
+					if (match) {
+						// Available pixels = Total - Claimed
+						const available = parseInt(match[1].replace(/,/g, ''), 10);
+						pixelCount = TOTAL_PIXELS - available;
+						console.log('[Sebplace] Calculated pixel count from available:', pixelCount);
+						break;
+					}
+				}
+			}
+
+			updateStatsUI();
+		} catch (error) {
+			console.error('[Sebplace] Failed to fetch ticker data:', error);
+		}
+	}
+
+    // ============================================
+    // STATS UI UPDATE - UPDATED
+    // ============================================
+    function updateStatsUI() {
+        const claimedEl = document.querySelector('.sebplace-stats-claimed');
+        const progressFill = document.querySelector('.sebplace-progress-fill');
+        const percentageEl = document.querySelector('.sebplace-stats-percentage');
+
+        if (claimedEl) {
+            claimedEl.textContent = pixelCount.toLocaleString();
+        }
+
+        const percentage = Math.min(100, (pixelCount / TOTAL_PIXELS) * 100);
+        if (progressFill) {
+            progressFill.style.width = percentage + '%';
+        }
+
+        if (percentageEl) {
+            percentageEl.textContent = percentage.toFixed(1) + '%';
+        }
+    }
 
     // ============================================
     // CANVAS PATCHING
@@ -508,7 +743,7 @@
         isDarkMode = !isDarkMode;
         GM_setValue(STORAGE_KEY, isDarkMode);
         applyDarkMode();
-        updateToggleButton();
+        updateAllSidebarUI();
     }
 
     function applyDarkMode() {
@@ -530,108 +765,179 @@
             unpatchCanvas();
         }
 
-        const toggleInput = document.querySelector('#sebplace-darkmode-toggle');
-        if (toggleInput) {
-            toggleInput.checked = isDarkMode;
-        }
-
-        updateToggleButton();
+        updateAllSidebarUI();
         console.log(`[Sebplace] Dark mode ${isDarkMode ? 'enabled' : 'disabled'}`);
     }
 
-    function updateToggleButton() {
-        const btn = document.querySelector('#sebplace-toggle-btn');
-        const dot = btn?.querySelector('.active-dot');
-        if (btn) {
-            btn.innerHTML = `
-                ${isDarkMode ? '🌙' : '☀️'}
-                <span class="active-dot ${isDarkMode ? 'on' : 'off'}"></span>
-            `;
-        }
+    function updateAllSidebarUI() {
+        document.querySelectorAll('#sebplace-darkmode-toggle').forEach(toggle => {
+            toggle.checked = isDarkMode;
+        });
+
+        document.querySelectorAll('.sebplace-status-dot').forEach(dot => {
+            dot.className = `sebplace-status-dot ${isDarkMode ? 'on' : 'off'}`;
+        });
     }
 
     // ============================================
-    // WIDGET CREATION
+    // ABOUT POPUP
     // ============================================
-    function togglePanel() {
-        isExpanded = !isExpanded;
-        const panel = document.querySelector('#sebplace-darkmode-panel');
-        if (panel) {
-            if (isExpanded) {
-                panel.classList.add('expanded');
-            } else {
-                panel.classList.remove('expanded');
-            }
+    function showAboutPopup() {
+        aboutPopupOpen = true;
+        const overlay = document.querySelector('#sebplace-about-overlay');
+        if (overlay) {
+            overlay.classList.add('active');
         }
     }
 
-    function createWidget() {
-        if (document.querySelector('#sebplace-darkmode-widget')) return;
+    function hideAboutPopup() {
+        aboutPopupOpen = false;
+        const overlay = document.querySelector('#sebplace-about-overlay');
+        if (overlay) {
+            overlay.classList.remove('active');
+        }
+    }
 
-        const widget = document.createElement('div');
-        widget.id = 'sebplace-darkmode-widget';
-        widget.innerHTML = `
-            <!-- Moon Icon Button -->
-            <button id="sebplace-toggle-btn" aria-label="Toggle dark mode panel">
-                ${isDarkMode ? '🌙' : '☀️'}
-                <span class="active-dot ${isDarkMode ? 'on' : 'off'}"></span>
-            </button>
+    function createAboutPopup() {
+        if (document.querySelector('#sebplace-about-overlay')) return;
 
-            <!-- Expanded Panel -->
-            <div id="sebplace-darkmode-panel">
-                <div class="widget-title">
-                    <span class="icon">🌙</span>
-                    <span>Sebplace Dark Mode</span>
-                    <span class="badge">v0.1</span>
+        const overlay = document.createElement('div');
+        overlay.id = 'sebplace-about-overlay';
+        overlay.innerHTML = `
+            <div id="sebplace-about-popup">
+                <button class="popup-close-btn" id="sebplace-about-close">✕</button>
+                <span class="popup-icon">🎨</span>
+                <div class="popup-title">
+                    About Seb Marble
+                    <span class="version">(v0.1.1)</span>
                 </div>
-                <div class="toggle-row">
-                    <span class="toggle-label">
-                        <span>Dark Canvas</span>
-                        <span class="sub">(background)</span>
-                    </span>
-                    <label class="seb-toggle">
-                        <input type="checkbox" id="sebplace-darkmode-toggle" ${isDarkMode ? 'checked' : ''}>
-                        <span class="slider"></span>
-                    </label>
+                <div class="popup-divider"></div>
+                <div class="popup-description">
+                    A tool that adds quality-of-life improvements to seb's pixel website <strong>themilliondollardrawing.com</strong>
                 </div>
-                <div class="toggle-row" style="margin-top:4px; border-bottom: none;">
-                    <span class="toggle-label" style="font-size:10px; color: rgba(255,255,255,0.35);">
-                        ⚡ Force dark page • Toggle to apply
-                    </span>
+                <div class="popup-author">
+                    Created with <span class="heart">♥</span> by <strong>princekyleaedam</strong>
                 </div>
             </div>
         `;
 
-        document.body.appendChild(widget);
+        document.body.appendChild(overlay);
 
-        // Toggle button click
-        const toggleBtn = widget.querySelector('#sebplace-toggle-btn');
-        toggleBtn.addEventListener('click', function(e) {
+        const closeBtn = overlay.querySelector('#sebplace-about-close');
+        closeBtn.addEventListener('click', function(e) {
             e.stopPropagation();
-            togglePanel();
+            hideAboutPopup();
         });
 
-        // Dark mode toggle in panel
-        const toggle = widget.querySelector('#sebplace-darkmode-toggle');
+        overlay.addEventListener('click', function(e) {
+            if (e.target === overlay) {
+                hideAboutPopup();
+            }
+        });
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && aboutPopupOpen) {
+                hideAboutPopup();
+            }
+        });
+    }
+
+    // ============================================
+    // SIDEBAR INJECTION
+    // ============================================
+    function injectIntoSidebar(sidebarContainer) {
+        if (!sidebarContainer) return false;
+
+        if (sidebarContainer.querySelector('.sebplace-darkmode-row')) return true;
+
+        const targetDiv = sidebarContainer.querySelector('.px-4.mt-2');
+        if (!targetDiv) {
+            console.log('[Sebplace] Target div not found in sidebar');
+            return false;
+        }
+
+		// Stats section HTML (keep as is)
+		const statsSection = document.createElement('div');
+		statsSection.className = 'sebplace-stats-section';
+		statsSection.innerHTML = `
+			<div class="stats-label">
+				<span class="icon">📊</span>
+				Canvas Progress
+			</div>
+			<div class="stats-numbers">
+				<span class="claimed sebplace-stats-claimed">${pixelCount.toLocaleString()}</span>
+				<span class="total">/ ${TOTAL_PIXELS.toLocaleString()} pixels</span>
+			</div>
+			<div class="progress-bar-track">
+				<div class="progress-bar-fill sebplace-progress-fill" style="width: ${Math.min(100, (pixelCount / TOTAL_PIXELS) * 100)}%"></div>
+			</div>
+			<div class="stats-percentage sebplace-stats-percentage">${((pixelCount / TOTAL_PIXELS) * 100).toFixed(1)}%</div>
+		`;
+
+        // Create Dark Mode row
+        const darkModeRow = document.createElement('div');
+        darkModeRow.className = 'sebplace-darkmode-row';
+        darkModeRow.innerHTML = `
+            <span class="sebplace-label">
+                <span class="icon">🌙</span>
+                Dark Mode
+                <span class="sebplace-status-dot ${isDarkMode ? 'on' : 'off'}"></span>
+            </span>
+            <label class="sebplace-toggle-switch">
+                <input type="checkbox" id="sebplace-darkmode-toggle" ${isDarkMode ? 'checked' : ''}>
+                <span class="slider"></span>
+            </label>
+        `;
+
+        // Create About link
+        const aboutLink = document.createElement('div');
+        aboutLink.className = 'sebplace-about-link';
+        aboutLink.id = 'sebplace-about-trigger';
+        aboutLink.innerHTML = `
+            <span class="icon">ℹ️</span>
+            About Seb Marble
+            <span class="version-tag">v0.1.1</span>
+        `;
+
+        // Insert in order: Stats → Dark Mode → About
+        targetDiv.parentElement.insertBefore(statsSection, targetDiv.nextSibling);
+        targetDiv.parentElement.insertBefore(darkModeRow, statsSection.nextSibling);
+        targetDiv.parentElement.insertBefore(aboutLink, darkModeRow.nextSibling);
+
+        // Dark mode toggle listener
+        const toggle = darkModeRow.querySelector('#sebplace-darkmode-toggle');
         toggle.addEventListener('change', function(e) {
             e.stopPropagation();
             toggleDarkMode();
         });
 
-        // Close panel when clicking outside
-        document.addEventListener('click', function(e) {
-            if (isExpanded && !widget.contains(e.target)) {
-                togglePanel();
-            }
-        });
-
-        // Prevent clicks inside panel from closing
-        const panel = widget.querySelector('#sebplace-darkmode-panel');
-        panel.addEventListener('click', function(e) {
+        // About link listener
+        aboutLink.addEventListener('click', function(e) {
+            e.preventDefault();
             e.stopPropagation();
+            console.log('[Sebplace] About link clicked!');
+            showAboutPopup();
         });
 
-        console.log('[Sebplace] Widget created');
+        console.log('[Sebplace] Sidebar content injected successfully!');
+        return true;
+    }
+
+    function injectSidebarContent() {
+        const sidebarContainers = document.querySelectorAll('.bg-white.rounded-2xl.shadow-sm.border.border-gray-200.overflow-hidden.flex.flex-col.h-screen.w-fit');
+
+        if (sidebarContainers.length === 0) {
+            console.log('[Sebplace] No sidebar containers found, will retry...');
+            return false;
+        }
+
+        let success = false;
+        sidebarContainers.forEach((container) => {
+            const result = injectIntoSidebar(container);
+            if (result) success = true;
+        });
+
+        return success;
     }
 
     // ============================================
@@ -641,6 +947,19 @@
         if (observer) return;
 
         observer = new MutationObserver(() => {
+            const sidebarContainers = document.querySelectorAll('.bg-white.rounded-2xl.shadow-sm.border.border-gray-200.overflow-hidden.flex.flex-col.h-screen.w-fit');
+            let needsInjection = false;
+
+            sidebarContainers.forEach(container => {
+                if (!container.querySelector('.sebplace-darkmode-row')) {
+                    needsInjection = true;
+                }
+            });
+
+            if (needsInjection) {
+                injectSidebarContent();
+            }
+
             if (isDarkMode && !canvasPatched) {
                 const canvas = document.querySelector('canvas[style*="image-rendering: pixelated"]');
                 if (canvas) {
@@ -661,12 +980,26 @@
     function init() {
         console.log('[Sebplace] Initializing dark mode...');
 
-        createWidget();
+        createAboutPopup();
         setupObserver();
+
+        // Initial stats fetch
+        updatePixelStats();
+
+        // Set up periodic updates
+        updateTimer = setInterval(updatePixelStats, UPDATE_INTERVAL);
+
+        setTimeout(() => {
+            const success = injectSidebarContent();
+            if (!success) {
+                setTimeout(injectSidebarContent, 2000);
+                setTimeout(injectSidebarContent, 5000);
+            }
+        }, 500);
 
         setTimeout(() => {
             applyDarkMode();
-        }, 500);
+        }, 600);
 
         setTimeout(() => {
             if (isDarkMode && !canvasPatched) {
@@ -687,21 +1020,33 @@
         init();
     }
 
-    // Handle navigation
+    // Handle SPA navigation
     let lastUrl = location.href;
     new MutationObserver(() => {
         const url = location.href;
         if (url !== lastUrl) {
             lastUrl = url;
             setTimeout(() => {
+                const sidebarContainers = document.querySelectorAll('.bg-white.rounded-2xl.shadow-sm.border.border-gray-200.overflow-hidden.flex.flex-col.h-screen.w-fit');
+                let needsInjection = false;
+
+                sidebarContainers.forEach(container => {
+                    if (!container.querySelector('.sebplace-darkmode-row')) {
+                        needsInjection = true;
+                    }
+                });
+
+                if (needsInjection) {
+                    injectSidebarContent();
+                }
+
                 if (isDarkMode) {
                     canvasPatched = false;
                     applyDarkMode();
                 }
-                // Recreate widget if it was removed
-                if (!document.querySelector('#sebplace-darkmode-widget')) {
-                    createWidget();
-                }
+
+                // Refresh stats on navigation
+                updatePixelStats();
             }, 1000);
         }
     }).observe(document, { subtree: true, childList: true });
@@ -714,9 +1059,12 @@
         status: () => isDarkMode,
         patchCanvas: patchCanvasForDarkMode,
         unpatchCanvas: unpatchCanvas,
-        togglePanel: togglePanel,
-        isExpanded: () => isExpanded
+        showAbout: showAboutPopup,
+        hideAbout: hideAboutPopup,
+        refreshStats: updatePixelStats,
+        getPixelCount: () => pixelCount
     };
 
-    console.log('[Sebplace] Dark mode ready! Click the moon/sun icon to open the panel.');
+    console.log('[Sebplace] Dark mode ready! Canvas stats and dark mode added to both sidebars.');
+    console.log('[Sebplace] Stats update every minute. Use window.sebplaceDarkMode for console controls.');
 })();
