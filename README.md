@@ -1,4 +1,11 @@
 A tool that adds quality-of-life improvements to seb's pixel website themilliondollardrawing.com
+Version 0.1.1
+
+Features:
+* Dark Mode (located in sidebar)
+* Canvas Progess
+* About seb marble
+
 
 Installation instructions:
 
