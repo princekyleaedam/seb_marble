@@ -820,8 +820,11 @@
                     A tool that adds quality-of-life improvements to seb's pixel website <strong>themilliondollardrawing.com</strong>
                 </div>
                 <div class="popup-author">
-                    Created with <span class="heart">♥</span> by <strong>princekyleaedam</strong>
+                    Created with <span class="heart">♥</span> by <strong>princekyleaedam.</strong>
                 </div>
+				<div>
+					<a href="https://github.com/princekyleaedam/seb_marble">Github Repository
+				</div>
             </div>
         `;
 
