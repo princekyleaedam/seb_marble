@@ -10,8 +10,8 @@
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
 // @run-at       document-idle
-// @updateURL    https://raw.githubusercontent.com/princekyleaedam/seb_marble/main/seb_marble.user.js
-// @downloadURL  https://raw.githubusercontent.com/princekyleaedam/seb_marble/main/seb_marble.user.js
+// @updateURL    https://github.com/princekyleaedam/seb_marble/blob/c1927cac10c78fc98fd00d915676720868ac537a/seb_marble_user.js
+// @downloadURL  https://github.com/princekyleaedam/seb_marble/blob/c1927cac10c78fc98fd00d915676720868ac537a/seb_marble_user.js
 // @homepageURL  https://github.com/princekyleaedam/seb_marble
 // @supportURL   https://github.com/princekyleaedam/seb_marble/issues
 // ==/UserScript==
