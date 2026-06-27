@@ -10,6 +10,10 @@
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
 // @run-at       document-idle
+// @updateURL    https://raw.githubusercontent.com/princekyleaedam/seb_marble/main/seb_marble.user.js
+// @downloadURL  https://raw.githubusercontent.com/princekyleaedam/seb_marble/main/seb_marble.user.js
+// @homepageURL  https://github.com/princekyleaedam/seb_marble
+// @supportURL   https://github.com/princekyleaedam/seb_marble/issues
 // ==/UserScript==
 
 (function() {
