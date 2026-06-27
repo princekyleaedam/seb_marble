@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Sebplace Dark Mode
-// @namespace    http://tampermonkey.net/
+// @name         Seb Marble
+// @namespace    https://github.com/princekyleaedam/seb_marble
 // @version      0.1.1
-// @description  Adds dark mode toggle and canvas stats to sidebar
-// @author       Seb
+// @description  Adds quality of life improvements to sebplace
+// @author       princekyleaedam
 // @match        https://themilliondollardrawing.com/*
 // @grant        GM_addStyle
 // @grant        GM_setValue
