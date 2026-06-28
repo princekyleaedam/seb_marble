@@ -9,6 +9,8 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
+// @grant        GM_notification
+// @grant        GM_registerMenuCommand
 // @run-at       document-idle
 // @updateURL    https://raw.githubusercontent.com/princekyleaedam/seb_marble/main/seb_marble_user.js
 // @downloadURL  https://raw.githubusercontent.com/princekyleaedam/seb_marble/main/seb_marble_user.js
@@ -27,6 +29,65 @@
     const TOTAL_PIXELS = 1000000;
     const API_URL = 'https://api.themilliondollardrawing.com/ticker';
     const UPDATE_INTERVAL = 60000; // 1 minute
+
+    // ============================================
+    // AUTO-UPDATE SYSTEM
+    // ============================================
+    const SCRIPT_VERSION = '0.1.1';
+    const GITHUB_REPO = 'princekyleaedam/seb_marble';
+    const GITHUB_RAW_URL = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/seb_marble_user.js`;
+    const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_REPO}/contents/seb_marble_user.js`;
+
+    async function checkForUpdates() {
+        try {
+            console.log('[Seb Marble] Checking for updates...');
+            const response = await fetch(GITHUB_API_URL, {
+                headers: { 'Accept': 'application/vnd.github.v3.raw' }
+            });
+            
+            if (!response.ok) {
+                console.log('[Seb Marble] Failed to check for updates:', response.status);
+                return;
+            }
+            
+            const scriptContent = await response.text();
+            const versionMatch = scriptContent.match(/@version\s+([\d.]+)/);
+            
+            if (!versionMatch) {
+                console.log('[Seb Marble] Could not find version in remote script');
+                return;
+            }
+            
+            const remoteVersion = versionMatch[1];
+            
+            if (remoteVersion !== SCRIPT_VERSION) {
+                console.log(`[Seb Marble] Update available! ${SCRIPT_VERSION} → ${remoteVersion}`);
+                showUpdateNotification(remoteVersion);
+            } else {
+                console.log('[Seb Marble] Script is up to date!');
+            }
+        } catch (error) {
+            console.error('[Seb Marble] Error checking for updates:', error);
+        }
+    }
+
+    function showUpdateNotification(version) {
+        GM_notification({
+            title: '📦 Seb Marble Update',
+            text: `Version ${version} is available! Click to update.`,
+            onclick: function() {
+                window.open(GITHUB_RAW_URL, '_blank');
+            }
+        });
+    }
+
+    function checkForUpdatesManually() {
+        GM_notification({
+            title: '📦 Seb Marble',
+            text: 'Checking for updates...'
+        });
+        checkForUpdates();
+    }
 
     // ============================================
     // STATE MANAGEMENT
@@ -823,7 +884,7 @@
                     Created with <span class="heart">♥</span> by <strong>princekyleaedam.</strong>
                 </div>
 				<div>
-					<a href="https://github.com/princekyleaedam/seb_marble">Github Repository
+					<a href="https://github.com/princekyleaedam/seb_marble">Github Repository</a>
 				</div>
             </div>
         `;
@@ -987,6 +1048,20 @@
     function init() {
         console.log('[Sebplace] Initializing dark mode...');
 
+        // Register menu commands
+        try {
+            GM_registerMenuCommand('📦 Check for Updates', checkForUpdatesManually);
+            GM_registerMenuCommand('🔄 Refresh Canvas Stats', () => {
+                updatePixelStats();
+                GM_notification({
+                    title: '📦 Seb Marble',
+                    text: 'Canvas stats refreshed!'
+                });
+            });
+        } catch (e) {
+            console.log('[Seb Marble] Menu commands not available');
+        }
+
         createAboutPopup();
         setupObserver();
 
@@ -1019,6 +1094,11 @@
                 patchCanvasForDarkMode();
             }
         }, 5000);
+
+        // Check for updates (delay to not slow down loading)
+        setTimeout(() => {
+            checkForUpdates();
+        }, 10000); // Check after 10 seconds
     }
 
     if (document.readyState === 'loading') {
@@ -1069,7 +1149,20 @@
         showAbout: showAboutPopup,
         hideAbout: hideAboutPopup,
         refreshStats: updatePixelStats,
-        getPixelCount: () => pixelCount
+        getPixelCount: () => pixelCount,
+        // Auto-update controls
+        version: SCRIPT_VERSION,
+        checkForUpdates: checkForUpdates,
+        updateNow: function() {
+            GM_notification({
+                title: '📦 Seb Marble',
+                text: 'Opening update page...',
+                onclick: function() {
+                    window.open(GITHUB_RAW_URL, '_blank');
+                }
+            });
+            window.open(GITHUB_RAW_URL, '_blank');
+        }
     };
 
     console.log('[Sebplace] Dark mode ready! Canvas stats and dark mode added to both sidebars.');
