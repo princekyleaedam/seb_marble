@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Seb Marble
 // @namespace    https://github.com/princekyleaedam/seb_marble
-// @version      0.1.1
+// @version      0.1.2
 // @description  Adds quality of life improvements to sebplace
 // @author       princekyleaedam
 // @match        https://themilliondollardrawing.com/*
@@ -33,7 +33,7 @@
     // ============================================
     // AUTO-UPDATE SYSTEM
     // ============================================
-    const SCRIPT_VERSION = '0.1.1';
+    const SCRIPT_VERSION = '0.1.2';
     const GITHUB_REPO = 'princekyleaedam/seb_marble';
     const GITHUB_RAW_URL = `https://raw.githubusercontent.com/${GITHUB_REPO}/main/seb_marble_user.js`;
     const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_REPO}/contents/seb_marble_user.js`;
@@ -584,6 +584,10 @@
         body.sebplace-dark-mode .shadow-2xl {
             box-shadow: 0 25px 50px rgba(0, 0, 0, 0.6) !important;
         }
+		
+		body.sebplace-dark-mode .font-bold.text-slate-900.leading-tight {
+			color: #ffffff !important;
+		}
 
         body.sebplace-dark-mode .bg-white\\/90 {
             background: rgba(22, 22, 26, 0.95) !important;
@@ -874,7 +878,7 @@
                 <span class="popup-icon">🎨</span>
                 <div class="popup-title">
                     About Seb Marble
-                    <span class="version">(v0.1.1)</span>
+                    <span class="version">(v0.1.2)</span>
                 </div>
                 <div class="popup-divider"></div>
                 <div class="popup-description">
@@ -964,7 +968,7 @@
         aboutLink.innerHTML = `
             <span class="icon">ℹ️</span>
             About Seb Marble
-            <span class="version-tag">v0.1.1</span>
+            <span class="version-tag">v0.1.2</span>
         `;
 
         // Insert in order: Stats → Dark Mode → About
