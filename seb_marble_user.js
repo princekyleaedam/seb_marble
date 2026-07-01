@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Seb Marble
 // @namespace    https://github.com/princekyleaedam/seb_marble
-// @version      0.1.2
+// @version      0.1.3
 // @description  Adds quality of life improvements to sebplace
 // @author       princekyleaedam
 // @match        https://themilliondollardrawing.com/*
@@ -431,6 +431,13 @@
         #sebplace-about-popup .popup-author .heart {
             color: #ff3b30;
         }
+
+		#github-repo {
+			color: rgba(255, 255, 255, 0.35);
+			font-size: 16px;
+			text-align: center;
+			font-weight: 500;
+		}
 
         #sebplace-about-popup .popup-close-btn {
             position: absolute;
@@ -878,7 +885,7 @@
                 <span class="popup-icon">🎨</span>
                 <div class="popup-title">
                     About Seb Marble
-                    <span class="version">(v0.1.2)</span>
+                    <span class="version">(v0.1.3)</span>
                 </div>
                 <div class="popup-divider"></div>
                 <div class="popup-description">
@@ -887,7 +894,7 @@
                 <div class="popup-author">
                     Created with <span class="heart">♥</span> by <strong>princekyleaedam.</strong>
                 </div>
-				<div>
+				<div class="github-repo">
 					<a href="https://github.com/princekyleaedam/seb_marble">Github Repository</a>
 				</div>
             </div>
@@ -968,7 +975,7 @@
         aboutLink.innerHTML = `
             <span class="icon">ℹ️</span>
             About Seb Marble
-            <span class="version-tag">v0.1.2</span>
+            <span class="version-tag">v0.1.3</span>
         `;
 
         // Insert in order: Stats → Dark Mode → About
